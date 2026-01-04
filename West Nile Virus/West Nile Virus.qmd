@@ -1,0 +1,434 @@
+---
+title: "Epidemiological Bulletin: West Nile Virus"
+subtitle: "California, United States — 2004"
+author: "Kabinga Chanda"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    theme: cosmo
+    number-sections: true
+editor: visual
+---
+
+```{r  echo=FALSE}
+#| message: false
+#| warning: true
+#install.packages("pacman")
+pacman::p_load(
+  epitools,
+  epikit,
+  sjPlot,
+  summarytools,
+  tidyverse,
+  gtsummary,
+  flextable,
+  stringr,
+  naniar,
+  janitor,
+  ggtext,
+  ggthemes,
+  gt,
+  sf,
+  rio,
+  stringr,
+  apyramid
+)
+```
+
+```{r,echo=FALSE, warning=FALSE}
+data <- data(wnv)
+data <- wnv
+
+ca_shp <- read_sf("D:/DSO_mac/R Portifolio/West Nile Virus California/West Nile Virus/ca_counties/CA_Counties.shp") #load shape file
+ca_shp <- ca_shp |> 
+  mutate(NAMELSAD = str_remove(NAMELSAD, " County.*"),
+         NAMELSAD = str_trim(NAMELSAD)) |> 
+  rename("county" = NAMELSAD) |> clean_names()
+
+
+
+ca_pop <- import("D:/DSO_mac/R Portifolio/West Nile Virus California/West Nile Virus/ca_counties/ca_pop.csv") # Load the ca population
+ca_pop <- ca_pop |> 
+  filter(ctyname != "California") |> 
+  select(ctyname, POPESTIMATE2003) |> 
+  mutate(ctyname = str_remove(ctyname, " County.*"),
+         ctyname = str_trim(ctyname)) |> 
+  rename("pop" = POPESTIMATE2003,
+         "county" = ctyname)
+```
+
+```{r,  echo=FALSE, warning=FALSE}
+
+
+data$age <- replace_na_with(data$age, median(data$age, na.rm = T)) ## imputate missing age
+
+
+
+data <- data |> 
+  mutate(age_cat = age_categories(age,
+                                                by = 15,
+                                                lower = 1,
+                                                upper = 95))
+
+data <- data |> 
+  mutate(
+    sex = case_when(
+      sex == "F" ~ "Female",
+      sex == "M" ~ "Male",
+      TRUE ~ as.character(sex)
+    ),
+    sex = factor(sex, levels = c("Female", "Male")),
+    
+    syndrome = case_when(
+      syndrome == "WNF" ~ "West Nile Fever",
+      syndrome == "WNND" ~ "Neuroinvasive Disease",
+      syndrome == "Unknown" ~ "Unknown",
+      TRUE ~ as.character(syndrome)
+    ),
+    syndrome = factor(syndrome, levels = c("Unknown", "West Nile Fever", "Neuroinvasive Disease"))
+  )
+
+data$wnv<- if_else(data$syndrome == "West Nile Fever", 1, 0)
+
+
+
+```
+
+```{r}
+data |> # checki for outliers in age var
+  drop_na() |> 
+  ggplot()+geom_boxplot(aes(x=age,
+                              y = sex,
+                              fill = sex))+
+  theme(panel.background = element_blank(),
+        axis.ticks = element_line(),
+        legend.position = "bottom",
+        panel.grid.major.x = element_line(color = "grey",
+                                          size = 0.01))
+
+data |> ## plot the age groups
+  ggplot()+
+    geom_bar(aes(x=age_cat),
+             fill = "skyblue",
+             color= "navy")+
+  coord_flip()+
+  labs(x = "Age (Years)",
+       y = "n")+
+  theme(panel.background = element_blank(),
+        axis.line.y = element_line())+
+  scale_y_continuous(limits = c(0,300),
+    breaks = c(0,50,100,150,200,250,300))
+
+data$date.onset <- ymd(data$date.onset) #convert to date
+data$date.tested <- ymd(data$date.tested) #convert to date
+data$onset_to_test <- as.numeric(data$date.tested - data$date.onset) #fine the differnce iin days between the onset and date tested conducted.
+
+
+ggplot(data, aes(x = onset_to_test)) +
+  geom_density(fill = "skyblue", alpha = 0.5, color = "navy") +
+  geom_vline(aes(xintercept = mean(onset_to_test, na.rm = TRUE), 
+                 color = "Mean"), 
+             linetype = "dashed", linewidth = 1) +
+  geom_vline(aes(xintercept = median(onset_to_test, na.rm = TRUE), 
+                 color = "Median"), 
+             linetype = "dashed", linewidth = 1) +
+  scale_color_manual(name = "Statistics",
+                     values = c("Mean" = "red", "Median" = "darkgreen")) +
+  labs(title = "Density Plot of Onset to Test Time",
+       x = "Days from Onset to Test",
+       y = "Density") +
+  theme_classic()+
+  theme(
+    axis.line = element_blank(),
+    axis.line.x = element_line(),
+    legend.position = "top")
+
+data |> 
+  filter(syndrome == "West Nile Fever") |> 
+  apyramid::age_pyramid(
+    age_group = "age_cat",
+    split_by = "sex",
+    proportional = T
+  ) +
+  scale_fill_manual(values = c("Male" = "skyblue", "Female" = "pink"))+
+  theme(panel.background = element_blank(),
+        legend.position = "bottom",
+        axis.title = element_text(face = "bold"))+
+  labs(
+    x = "Age group",
+    y = "Percent of total",
+    fill = NULL)
+```
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+
+data |> 
+  select(-date.onset, -date.tested, -id, -syndrome, -age_cat, -county) |>  # Remove c()
+  tbl_summary(
+    by = wnv,
+    missing = "no",
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}, {p75})",  # Remove space in function
+      all_categorical() ~ "{n} ({p})"
+    ),
+    label = list(
+      age ~ "Age (years)",  # Use ~ instead of =
+      sex ~ "Participant Gender",
+      death ~ "Died",
+      onset_to_test ~ "Days from Onset to Test"
+     
+    )
+  ) |>
+  add_p() |> 
+  add_overall() |> 
+  bold_labels() |> 
+  bold_p() |> 
+  modify_header(
+    label = "**Variable**",
+    stat_1 = "**Negative**",
+    stat_2 = md("**Positive**"),
+    stat_0 = "**Overall** <br> \nN = {style_number(N)}",
+    p.value = "***P-value***"
+  ) |> 
+  as_gt() |> 
+  tab_spanner(
+    label = md("**West Nile Virus**"),  # Made bold
+    columns = c(stat_1, stat_2)
+  ) |> 
+  tab_options(
+    table.background.color = "white",
+    table_body.hlines.color = "white",
+    heading.background.color = "white"
+  ) |> 
+  tab_header(
+    title = md("**West Nile Virus Human Cases Reported in California, USA**"),
+    subtitle = md("As of December 14, 2004")  # Better formatting
+  )
+
+
+
+
+#West Nile Virus human cases reported in California, USA, as of December 14, 2004
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Define weekly breaks
+weekly_breaks <- seq.Date(
+  from = floor_date(min(data$date.onset, na.rm = TRUE), "week", week_start = 1),
+  to   = ceiling_date(max(data$date.onset, na.rm = TRUE), "week", week_start = 1),
+  by   = "week"
+)
+
+# Create epidemic curve by syndrome
+ggplot(data = data) + 
+  geom_histogram(
+    mapping = aes(x = date.onset, fill = syndrome),
+    breaks = weekly_breaks,
+    closed = "left",
+    color = "white",
+    position = "stack"
+  ) + 
+  scale_x_date(
+    expand = c(0, 0),
+    date_breaks = "2 weeks",
+    date_minor_breaks = "week",
+    date_labels = "%d %b\n%Y"
+  ) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_fill_manual(
+    values = c("Unknown" = "gray70", "West Nile Fever" = "skyblue", "Neuroinvasive Disease" = "coral"),
+    labels = c("Unknown", "West Nile Fever", "Neuroinvasive Disease")
+  ) +
+  theme_minimal() +
+  theme(
+    plot.caption = element_text(hjust = 0, face = "italic"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    axis.ticks = element_line(),
+    axis.line.x = element_line()
+  ) +
+  labs(
+    title = "Weekly West Nile Virus cases by syndrome (Monday weeks)",
+    x = "Week of symptom onset",
+    y = "Weekly incident cases",
+    fill = "Syndrome",
+    caption = str_glue("n = {nrow(data)} cases; Onset dates from {format(min(data$date.onset, na.rm=T), '%d %b %Y')} to {format(max(data$date.onset, na.rm=T), '%d %b %Y')}")
+  )
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+# Define weekly breaks based on testing date
+weekly_breaks <- seq.Date(
+  from = floor_date(min(data$date.tested, na.rm = TRUE), "week", week_start = 1),
+  to   = ceiling_date(max(data$date.tested, na.rm = TRUE), "week", week_start = 1),
+  by   = "week"
+)
+
+# Create epidemic curve by syndrome using test date
+ggplot(data = data) + 
+  geom_histogram(
+    mapping = aes(x = date.tested, fill = syndrome),
+    breaks = weekly_breaks,
+    closed = "left",
+    color = "white",
+    position = "stack"
+  ) + 
+  scale_x_date(
+    expand = c(0, 0),
+    date_breaks = "2 weeks",
+    date_minor_breaks = "week",
+    date_labels = "%d %b\n%Y"
+  ) +
+  scale_fill_manual(
+    values = c("Unknown" = "gray70", "West Nile Fever" = "skyblue", "Neuroinvasive Disease" = "coral"),
+    labels = c("Unknown", "West Nile Fever", "Neuroinvasive Disease")
+  ) +
+  theme_minimal() +
+  theme(
+    plot.caption = element_text(hjust = 0, face = "italic"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "bottom",
+    panel.grid = element_blank(),
+    axis.ticks = element_line(),
+    axis.line.x = element_line()
+  ) +
+  labs(
+    title = "Weekly West Nile Virus cases by syndrome (Monday weeks)",
+    x = "Week of testing",  # Updated label
+    y = "Weekly incident cases",
+    fill = "Syndrome",
+    caption = str_glue("n = {nrow(data)} cases; Test dates from {format(min(data$date.tested, na.rm=T), '%d %b %Y')} to {format(max(data$date.tested, na.rm=T), '%d %b %Y')}\n{sum(is.na(data$date.tested))} cases missing test date and not shown")
+  )
+
+```
+
+### Risk Factors for Mortality
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Prepare data with renamed categories
+
+
+# Run logistic regression
+model_multi <- glm(wnv ~ age + sex + onset_to_test,
+                   data = data,
+                   family = binomial)
+
+# Display results
+tbl_regression(model_multi, 
+               exponentiate = TRUE,
+               label = list(
+                 age ~ "Patient Age (years)",
+                 sex ~ "Gender",
+                 onset_to_test ~ "Days to Testing"
+               )) |>
+  add_global_p() |>
+  add_glance_table(
+    include = c(nobs, logLik, AIC, BIC)
+  ) |>
+  bold_p() |>
+  bold_labels() |>
+  modify_header(
+    label = "**Variable**",
+    estimate = "**aOR**",
+    p.value = "**P-value**"
+  ) |>  # Removed ci = "**95% CI**"
+  modify_column_hide(columns = c(ci)) |>  # Hide the duplicate CI column
+  as_gt() |>
+  tab_header(
+    title = md("**West Nile Virus Human Cases <br> Risk Factors for Mortality**"),
+    subtitle = md("West Nile Virus Cases, California 2004")
+  ) |>
+  tab_options(
+    table.background.color = "white",
+    table_body.hlines.color = "white",
+    heading.background.color = "white",
+    column_labels.background.color = "white"
+  ) |> 
+  tab_source_note(
+    source_note = "aOR = Adjusted Odds Ratio; CI = Confidence Interval. Reference: Female, Unknown syndrome."
+  )
+  
+```
+
+```{r Spatial Epidemiology}
+#| message: false
+#| warning: false
+
+
+#### West Nile Fever Disease Burden
+wnv_sp <- data |> 
+  filter(syndrome == "West Nile Fever") |> 
+  group_by(county) |> 
+  summarise("Number of Cases" = n(),
+           "Number of Death" = sum("Number of Death" =="Yes", na.rm = T))
+
+ca_wnv_sp <- left_join(ca_pop,
+                    wnv_sp,
+                    by = "county") |> 
+  mutate(`Number of Cases` = replace_na(`Number of Cases`, 0),
+         "Incidence Rate" = round(`Number of Cases`/pop *100000, 1))
+
+
+
+## Neuroinvasive
+nis_sp <- data |> 
+  filter(syndrome == "Neuroinvasive Disease") |> 
+  group_by(county) |> 
+  summarise(n_cases = n(),
+            n_dead = sum(death == "Yes", na.rm = T))
+
+ca_nis_sp <- left_join(ca_pop,
+                       nis_sp,
+                       by = "county") |> 
+  mutate(n_cases = replace_na(n_cases, 0),
+         inc_rate = round(n_cases/pop * 100000, 1),
+         n_dead = replace_na(n_dead, 0),
+         cfr = case_when(
+           n_cases == 0 ~ 0,
+           TRUE ~ round(n_dead/n_cases * 100, 1)
+         )) |> select(-pop)
+
+
+
+
+```
+
+```{r}
+ca_wnv_sp |>
+  select(
+    county,
+    pop,
+    `Number of Cases`,
+    `Incidence Rate`,
+    `Number of Death`
+  ) |>
+  filter(!is.na(`Number of Cases`) & `Number of Cases` >0) |> 
+  arrange( desc(`Incidence Rate` )) |> 
+  gt() |>
+  tab_header(
+    title = md("**West Nile Virus Cases by County**"),
+    subtitle = md("Cases of Human West Nile Fever in California, *2004*")
+  ) |>
+  cols_label(
+    county = md("**County**"),
+    pop = md("**Population**"),
+    `Number of Cases` = md("**Cases**"),
+    `Incidence Rate` = md("**Incidence<br>Rate**"),
+    `Number of Death` = md("**Deaths**")) |> 
+  tab_footnote(footnote = md("The Incidence Rate is expressed per *100,000* Population")) |> 
+  tab_options(
+    table.background.color = "white",
+    table_body.hlines.color = "white",
+    heading.background.color = "white"
+  )
+```
+
+```{r}
+
+```
+
+![](West%20Nile%20Virus.png)
