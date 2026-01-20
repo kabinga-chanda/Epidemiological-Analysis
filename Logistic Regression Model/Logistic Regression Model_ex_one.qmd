@@ -1,0 +1,162 @@
+---
+title: "Logistic Regression Model Selection"
+author: 
+  - name: Kabinga Chanda
+    url: https://www.linkedin.com/in/kabinga-chanda-7646b1211/?originalSubdomain=zm
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    code-summary: "Show the code"
+    theme: cosmo
+editor: visual
+---
+
+
+```{r}
+#| message: false
+#| warning: false
+#| include: false
+
+# Load Libraries
+pacman::p_load(
+    tidyverse,
+    rio,
+    janitor,
+    gt,
+    gtsummary
+)
+
+# Load data
+data(Titanic)
+df <- as.data.frame(Titanic)
+df <- df[rep(seq_len(nrow(df)), df$Freq), ]
+df$Freq <- NULL
+
+# Recode the outcome variable
+df$Survived <- ifelse(df$Survived == "Yes", 1, 0)
+```
+
+## Introduction
+
+### Background
+
+The sinking of the RMS Titanic on April 15, 1912, remains one of the most infamous maritime disasters in history. The tragedy claimed over 1,500 lives and has since become a subject of extensive historical and statistical analysis. Understanding the factors that influenced passenger survival can provide insights into the social dynamics and emergency response protocols of the era.
+
+### Objective
+
+This analysis employs logistic regression modeling to identify and quantify the factors associated with passenger survival on the Titanic. Specifically, we aim to:
+
+1. Examine the individual (univariable) associations between demographic and socioeconomic variables and survival outcomes
+2. Develop a multivariable model to assess the adjusted effects of these predictors while controlling for potential confounding
+3. Demonstrate a systematic approach to model selection in logistic regression
+
+### Dataset
+
+The analysis uses the Titanic dataset available in R, which contains information on passengers' survival status, sex, age (child or adult), and passenger class (1st, 2nd, 3rd, or crew). This dataset has been widely used in statistical education to illustrate classification and regression techniques.
+
+### Analytical Approach
+
+We follow a two-stage modeling strategy commonly used in epidemiological and clinical research:
+
+1. **Univariable screening**: Each predictor is examined individually to identify variables with sufficient evidence of association (p < 0.2) for inclusion in the multivariable model
+2. **Multivariable modeling**: Variables that pass the screening threshold are included in a comprehensive model to estimate adjusted associations
+
+This approach balances statistical efficiency with the need to control for confounding, providing a robust framework for understanding the complex relationships between passenger characteristics and survival.
+
+## Univariable Model
+
+The univariable analysis examines the association between each predictor and survival independently. This screening step identifies variables with p-values < 0.2, which are then candidates for inclusion in the multivariable logistic regression model.
+
+## Univariable Model
+The univariable analysis examines the association between each predictor and survival independently. This screening step identifies variables with p-values < 0.2, which are then candidates for inclusion in the multivariable logistic regression model.
+```{r}
+df %>%
+  select(Survived, Sex, Age, Class) %>%
+  tbl_uvregression(
+    method = glm,
+    y = Survived,
+    method.args = list(family = binomial),
+    exponentiate = TRUE,
+    label = list(
+        Age ~ "Age (Years)",
+        Sex ~ "Sex of the Passengers"
+    )
+  ) |> 
+    bold_labels() |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Univariable Logistic Regression Model**"),
+        subtitle = md("Fate of passengers on the fatal maiden
+                      voyage of the ocean liner 'Titanic'")
+    ) |> 
+    tab_source_note(
+        source_note = md("Dawson, Robert J. MacG. (1995), The ‘Unusual Episode’ Data Revisited. Journal of Statistics Education, 3. *doi:10.1080/10691898.1995.11910499.*") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent"
+    )
+
+
+```
+
+## Fit Initial Multivaribale Model
+After identifying significant predictors in the univariable analysis, we fit a multivariable logistic regression model to examine the adjusted associations while controlling for confounding variables.
+```{r}
+full_model <- glm(
+  Survived ~ Sex + Age + Class,
+  data = df,
+  family = binomial
+)
+
+
+tbl_regression(
+    full_model,
+     exponentiate = T,
+    label = list(
+        Age ~ "Age (Years)",
+        Sex ~ "Sex of the Passengers"
+    )
+) |> 
+    bold_labels() |> 
+    modify_header(estimate ~ "**AOR**") |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Mulativariable Logistic Regression Model**"),
+        subtitle = md("Fate of passengers on the fatal maiden
+                      voyage of the ocean liner 'Titanic'")
+    ) |> 
+    tab_source_note(
+        source_note = md("Dawson, Robert J. MacG. (1995), The ‘Unusual Episode’ Data Revisited. Journal of Statistics Education, 3. *doi:10.1080/10691898.1995.11910499.*") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent"
+    )
+
+
+```
+### Interpretation
+
+When interpreting the multivariable model, compare the adjusted odds ratios (AOR) to the crude odds ratios from the univariable analysis. Key considerations include:
+
+- **Confounding**: Variables whose effect estimates change substantially (typically >10-20%) when adjusted for other variables may indicate confounding.
+- **Effect modification**: Assess whether associations differ across subgroups.
+- **Statistical significance**: Variables that were significant in univariable analysis but become non-significant in the multivariable model may be explained by confounding.
+
+### Model Selection Decision
+
+If all variables in the multivariable model remain statistically significant and are theoretically justified, no further variable selection is necessary. The model adequately represents the relationships between predictors and the outcome. However, if some variables become non-significant, consider:
+
+1. Retaining variables that are clinically or theoretically important, regardless of statistical significance
+2. Using backward elimination or other selection methods to arrive at a parsimonious model
+3. Assessing model fit using criteria such as AIC, BIC, or likelihood ratio tests

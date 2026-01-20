@@ -1,0 +1,829 @@
+---
+title: "Logistic Regression Model Selection in R"
+author: 
+  - name: Kabinga Chanda
+    url: https://www.linkedin.com/in/kabinga-chanda-7646b1211/?originalSubdomain=zm
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: true
+    code-summary: "Show the code"
+    theme: cosmo
+editor: visual
+---
+
+
+```{r}
+#| message: false
+#| warning: false
+#| include: false
+# Load Libraries
+pacman::p_load(
+    tidyverse,
+    car,
+    rio,
+    janitor,
+    gt,
+    gtsummary,
+    mlbench,
+    naniar,
+    lmtest,
+    broom
+    
+)
+
+#Load data
+data(PimaIndiansDiabetes2)
+data <- PimaIndiansDiabetes2 %>% drop_na()
+data <- data %>%
+  mutate(diabetes = ifelse(diabetes == "pos", 1, 0))
+
+
+```
+
+## Introduction
+### Background
+Type 2 diabetes mellitus is a major public health concern worldwide, with risk influenced by a combination of metabolic, anthropometric, and demographic factors. Identifying predictors of diabetes is essential for understanding disease etiology and informing prevention strategies. The Pima Indians Diabetes dataset has been widely used to study these relationships and to demonstrate statistical modeling approaches in epidemiology and biostatistics.
+
+### Objective
+This analysis applies logistic regression modeling to identify factors associated with diabetes status. Specifically, the objectives are to:
+
+1. Examine univariable associations between selected clinical and demographic predictors and diabetes status
+2. Fit a multivariable logistic regression model to estimate adjusted associations while controlling for confounding
+3. Demonstrate a systematic and transparent approach to model selection using likelihood-based methods
+
+### Dataset
+The analysis uses the *PimaIndiansDiabetes2* dataset, which includes 768 observations on adult women of Pima Indian heritage. The outcome variable indicates diabetes status, while predictors include plasma glucose concentration, body mass index, blood pressure, insulin levels, diabetes pedigree function, age, and reproductive history. The corrected version of the dataset replaces physiologically implausible zero values with missing values.
+ 
+### Analytic Approach
+A stepwise modeling strategy commonly used in epidemiological research is employed. Univariable logistic regression models are first fitted to assess individual associations between predictors and diabetes status. A full multivariable model is then estimated, and Likelihood Ratio Tests are used to compare nested models and guide variable removal. The final model is selected based on statistical evidence and parsimony.
+
+
+## Univariable Model
+Each predictor is first evaluated in a univariable logistic regression model with diabetes status as the outcome. This step provides an initial assessment of the strength and direction of association between individual predictors and the outcome. Univariable results are used for descriptive purposes and do not, on their own, determine inclusion in the final multivariable model.
+
+```{r}
+tbl_uni <- data %>%
+  select(diabetes, pregnant, glucose, pressure, triceps,
+         insulin, mass, pedigree, age) %>%
+  tbl_uvregression(
+    method = glm,
+    y = diabetes,
+    method.args = list(family = binomial),
+    exponentiate = TRUE,
+    label = list(
+      pregnant = "Number of pregnancies",
+      glucose  = "Plasma glucose",
+      pressure = "Diastolic BP",
+      triceps  = "Triceps skinfold",
+      insulin  = "Serum insulin",
+      mass     = "Body Mass Index",
+      pedigree = "Diabetes pedigree",
+      age      = "Age (years)"
+    )
+  ) |>
+  bold_labels() |>
+  bold_p() |>
+  as_gt() |>  # Use as_gt() instead of gt()
+ tab_header(
+        title = md("**Univariable Logistic Regression Model**"),
+        subtitle = md("Predictors of Diabetes, India")
+    ) |> 
+    tab_source_note(
+        source_note = md("Original owners: National Institute of Diabetes and Digestive and Kidney Diseases") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent",
+          table.width = px(450)
+    )
+    
+tbl_uni
+
+```
+## Multivariable Logistic Regression Model
+A full multivariable logistic regression model is then fitted, including all candidate predictors. This model serves as the reference point for subsequent model comparisons. Adjusted odds ratios (AORs) from this model reflect the association between each predictor and diabetes after controlling for the other variables in the model.
+
+```{r}
+full_model <- glm(
+  diabetes ~ pregnant + glucose + pressure + triceps +
+             insulin + mass + pedigree + age,
+  data = data,
+  family = binomial
+)
+
+tbl_regression(full_model,
+               exponentiate = T,
+               label = list(
+      pregnant = "Number of pregnancies",
+      glucose  = "Plasma glucose",
+      pressure = "Diastolic BP",
+      triceps  = "Triceps skinfold",
+      insulin  = "Serum insulin",
+      mass     = "Body Mass Index",
+      pedigree = "Diabetes pedigree",
+      age      = "Age (years)"
+    )
+) |> 
+    bold_labels() |> 
+    modify_header(estimate ~ "**AOR**") |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Multivariable Logistic Regression Model**"),
+        subtitle = md("Predictors of Diabetes, India")
+    ) |> 
+    tab_source_note(
+        source_note = md("Original owners: National Institute of Diabetes and Digestive and Kidney Diseases") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent",
+        table.width = px(450)
+    )
+
+```
+## Variable Removal Strategy
+Model simplification is performed by removing one variable at a time from the full model. Each reduced model is compared with the full model using a Likelihood Ratio Test (LRT). This approach allows assessment of whether the excluded variable contributes meaningfully to model fit.
+
+## Likelihood Ratio Test (LRT)
+The Likelihood Ratio Test evaluates the null hypothesis that the reduced model fits the data as well as the full model.
+
+* A p-value < 0.05 suggests that the removed variable significantly improves model fit and should be retained.
+* A p-value ≥ 0.05 suggests that the simpler model is sufficient, and the variable may be excluded without substantially worsening model performance.
+
+
+### Removal of Diastolic Blood Pressure
+
+
+```{r}
+model_no_pressure <- glm(
+  diabetes ~ pregnant + glucose +  triceps +
+             insulin + mass + pedigree + age,
+  data = data,
+  family = binomial
+) 
+
+tbl_regression(model_no_pressure,
+               exponentiate = T,
+               label = list(
+      pregnant = "Number of pregnancies",
+      glucose  = "Plasma glucose",
+      triceps  = "Triceps skinfold",
+      insulin  = "Serum insulin",
+      mass     = "Body Mass Index",
+      pedigree = "Diabetes pedigree",
+      age      = "Age (years)"
+    )
+) |> 
+    bold_labels() |> 
+    modify_header(estimate ~ "**AOR**") |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Model without the Pressure BP**"),
+        subtitle = md("Predictors of Diabetes, India")
+    ) |> 
+    tab_source_note(
+        source_note = md("Original owners: National Institute of Diabetes and Digestive and Kidney Diseases") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent",
+        table.width = px(450)
+    )
+
+
+```
+
+```{r}
+# Perform LRT
+lrt_result <- lrtest(model_no_pressure, full_model)
+
+# Convert to data frame and clean up
+lrt_df <- data.frame(
+  Model = c("Without Pressure", "With Pressure"),
+  `Parameters` = c(8, 9),
+  `Log Likelihood` = c(-172.02, -172.01),
+  `Df` = c(NA, 1),
+  `Chi-square` = c(NA, 0.0144),
+  `P-value` = c(NA, 0.9045),
+  check.names = FALSE
+)
+
+# Create formatted table
+lrt_df |>
+  gt() |>
+  tab_header(
+    title = md("**Likelihood Ratio Test**"),
+    subtitle = "Comparing models with and without `blood pressure` Variable"
+  ) |>
+  fmt_number(
+    columns = c(`Log Likelihood`, `Chi-square`),
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = `P-value`,
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = Df,
+    decimals = 0
+  ) |>
+  tab_footnote(
+    footnote = "A non-significant p-value (p > 0.05) indicates that the simpler model is preferred.",
+    locations = cells_column_labels(columns = `P-value`)
+  ) |>
+  tab_options(
+    table_body.hlines.color = "transparent",
+    table_body.vlines.color = "transparent"
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  cols_align(
+    align = "left",
+    columns = Model
+  )
+
+```
+After removing diastolic blood pressure from the model, the Likelihood Ratio Test yields a non-significant p-value. This indicates that inclusion of diastolic blood pressure does not significantly improve model fit relative to the full model. Therefore, this variable may be considered for exclusion.
+
+
+### Removal of Triceps Skinfold Thickness
+
+```{r}
+model_no_triceps <- glm(
+  diabetes ~ pregnant + glucose + pressure +
+             insulin + mass + pedigree + age,
+  data = data,
+  family = binomial
+)
+
+tbl_regression(model_no_triceps,
+               exponentiate = T,
+               label = list(
+      pregnant = "Number of pregnancies",
+      glucose  = "Plasma glucose",
+      pressure = "Diastolic BP",
+      triceps  = "Triceps skinfold",
+      insulin  = "Serum insulin",
+      mass     = "Body Mass Index",
+      pedigree = "Diabetes pedigree",
+      age      = "Age (years)"
+    )
+) |> 
+    bold_labels() |> 
+    modify_header(estimate ~ "**AOR**") |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Model Without the Triceps skinfold Variable**"),
+        subtitle = md("Predictors of Diabetes, India")
+    ) |> 
+    tab_source_note(
+        source_note = md("Original owners: National Institute of Diabetes and Digestive and Kidney Diseases") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent",
+        table.width = px(450)
+    )
+```
+
+```{r}
+# Perform LRT
+lrt_result_triceps <- lrtest(model_no_triceps, full_model)
+
+# Convert to data frame and clean up
+lrt_df_triceps <- data.frame(
+  Model = c("Without Triceps skinfold", "With Triceps skinfold"),
+  Parameters = c(8, 9),
+  `Log Likelihood` = c(-172.23, -172.01),
+  Df = c(NA, 1),
+  `Chi-square` = c(NA, 0.4308),
+  `P-value` = c(NA, 0.5116),
+  check.names = FALSE
+)
+
+# Create formatted table
+lrt_df_triceps |>
+  gt() |>
+  tab_header(
+    title = md("**Likelihood Ratio Test**"),
+    subtitle = "Comparing models with and without Triceps skinfold Variable"
+  ) |>
+  fmt_number(
+    columns = c(`Log Likelihood`, `Chi-square`),
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = `P-value`,
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = Df,
+    decimals = 0
+  ) |>
+  tab_footnote(
+    footnote = "A non-significant p-value (p > 0.05) indicates that the simpler model is preferred.",
+    locations = cells_column_labels(columns = `P-value`)
+  ) |>
+  tab_options(
+    table.border.top.color = "transparent",
+    table_body.hlines.color = "transparent",
+    table_body.border.bottom.color = "black"
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  cols_align(
+    align = "left",
+    columns = Model
+  )
+```
+The Likelihood Ratio Test comparing models with and without triceps skinfold thickness is non-significant. This suggests that triceps skinfold thickness does not contribute meaningfully to the explanatory power of the model and can be excluded in favor of a simpler model.
+
+
+### Removal of Serum Insulin
+```{r}
+model_no_insulin <- glm(
+  diabetes ~ pregnant + glucose + pressure + triceps +
+      mass + pedigree + age,
+  data = data,
+  family = binomial
+)
+
+tbl_regression(model_no_insulin,
+               exponentiate = T,
+               label = list(
+      pregnant = "Number of pregnancies",
+      glucose  = "Plasma glucose",
+      pressure = "Diastolic BP",
+      triceps  = "Triceps skinfold",
+      insulin  = "Serum insulin",
+      mass     = "Body Mass Index",
+      pedigree = "Diabetes pedigree",
+      age      = "Age (years)"
+    )
+) |> 
+    bold_labels() |> 
+    modify_header(estimate ~ "**AOR**") |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Model Without the Insulin Vaariable**"),
+        subtitle = md("Predictors of Diabetes, India")
+    ) |> 
+    tab_source_note(
+        source_note = md("Original owners: National Institute of Diabetes and Digestive and Kidney Diseases") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent",
+        table.width = px(450)
+    )
+```
+
+```{r}
+# Perform LRT
+lrt_result_insulin <- lrtest(model_no_insulin, full_model)
+
+# Convert to data frame and clean up
+lrt_df_insulin <- data.frame(
+  Model = c("Without Insulin", "With Insulin"),
+  Parameters = c(8, 9),
+  `Log Likelihood` = c(-172.21, -172.01),
+  Df = c(NA, 1),
+  `Chi-square` = c(NA, 0.3971),
+  `P-value` = c(NA, 0.5286),
+  check.names = FALSE
+)
+
+# Create formatted table
+lrt_df_insulin |>
+  gt() |>
+  tab_header(
+    title = md("**Likelihood Ratio Test**"),
+    subtitle = "Comparing models with and without Insulin Variable"
+  ) |>
+  fmt_number(
+    columns = c(`Log Likelihood`, `Chi-square`),
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = `P-value`,
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = Df,
+    decimals = 0
+  ) |>
+  tab_footnote(
+    footnote = "A non-significant p-value (p > 0.05) indicates that the simpler model is preferred.",
+    locations = cells_column_labels(columns = `P-value`)
+  ) |>
+  tab_options(
+    table.border.top.color = "transparent",
+    table_body.hlines.color = "transparent",
+    table_body.border.bottom.color = "black"
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  cols_align(
+    align = "left",
+    columns = Model
+  )
+```
+Similarly, removing serum insulin results in a non-significant Likelihood Ratio Test. This finding indicates that serum insulin does not significantly improve model fit when other predictors are included.
+
+
+### Removal of Number of Pregnancies
+```{r}
+model_no_pregnancies <- glm(
+  diabetes ~ glucose + pressure + triceps +
+             insulin + mass + pedigree + age,
+  data = data,
+  family = binomial
+)
+
+tbl_regression(model_no_pregnancies,
+               exponentiate = T,
+               label = list(
+      pregnant = "Number of pregnancies",
+      glucose  = "Plasma glucose",
+      pressure = "Diastolic BP",
+      triceps  = "Triceps skinfold",
+      insulin  = "Serum insulin",
+      mass     = "Body Mass Index",
+      pedigree = "Diabetes pedigree",
+      age      = "Age (years)"
+    )
+) |> 
+    bold_labels() |> 
+    modify_header(estimate ~ "**AOR**") |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Mulativariable Logistic Regression Model**"),
+        subtitle = md("Predictors of Diabetes, India")
+    ) |> 
+    tab_source_note(
+        source_note = md("Original owners: National Institute of Diabetes and Digestive and Kidney Diseases") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent",
+        table.width = px(450)
+    )
+
+```
+
+
+
+```{r}
+# Perform LRT
+lrt_result_pregnant <- lrtest(model_no_pregnancies , full_model)
+
+# Convert to data frame and clean up
+lrt_df_pregnant <- data.frame(
+  Model = c("Without Pregnant", "With Pregnant"),
+  Parameters = c(8, 9),
+  `Log Likelihood` = c(-173.12, -172.01),
+  Df = c(NA, 1),
+  `Chi-square` = c(NA, 2.2143),
+  `P-value` = c(NA, 0.1367),
+  check.names = FALSE
+)
+
+# Create formatted table
+lrt_df_pregnant |>
+  gt() |>
+  tab_header(
+    title = md("**Likelihood Ratio Test**"),
+    subtitle = "Comparing models with and without Pregnant Variable"
+  ) |>
+  fmt_number(
+    columns = c(`Log Likelihood`, `Chi-square`),
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = `P-value`,
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = Df,
+    decimals = 0
+  ) |>
+  tab_footnote(
+    footnote = "A non-significant p-value (p > 0.05) indicates that the simpler model is preferred.",
+    locations = cells_column_labels(columns = `P-value`)
+  ) |>
+  tab_options(
+    table.border.top.color = "transparent",
+    table_body.hlines.color = "transparent",
+    table_body.border.bottom.color = "black"
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  cols_align(
+    align = "left",
+    columns = Model
+  )
+```
+Excluding the number of pregnancies yields a non-significant p-value, although it is closer to the conventional significance threshold compared to previously removed variables. While the simpler model is preferred at the 0.05 level, this result suggests that the variable may still have some explanatory relevance.
+
+
+
+### Removal of Age
+```{r}
+model_no_age <- glm(
+  diabetes ~ pregnant + glucose + pressure + triceps +
+             insulin + mass + pedigree,
+  data = data,
+  family = binomial
+)
+
+tbl_regression(model_no_age,
+               exponentiate = T,
+               label = list(
+      pregnant = "Number of pregnancies",
+      glucose  = "Plasma glucose",
+      pressure = "Diastolic BP",
+      triceps  = "Triceps skinfold",
+      insulin  = "Serum insulin",
+      mass     = "Body Mass Index",
+      pedigree = "Diabetes pedigree",
+      age      = "Age (years)"
+    )
+) |> 
+    bold_labels() |> 
+    modify_header(estimate ~ "**AOR**") |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Mulativariable Logistic Regression Model**"),
+        subtitle = md("Predictors of Diabetes, India")
+    ) |> 
+    tab_source_note(
+        source_note = md("Original owners: National Institute of Diabetes and Digestive and Kidney Diseases") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent",
+        table.width = px(450)
+    )
+
+```
+
+
+
+```{r}
+# Perform LRT
+lrt_result_age <- lrtest(model_no_age, full_model)
+
+# Convert to data frame and clean up
+lrt_df_age <- data.frame(
+  Model = c("Without Age", "With Age"),
+  Parameters = c(8, 9),
+  `Log Likelihood` = c(-173.78, -172.01),
+  Df = c(NA, 1),
+  `Chi-square` = c(NA, 3.5285),
+  `P-value` = c(NA, 0.06032),
+  check.names = FALSE
+)
+
+# Create formatted table
+lrt_df_age |>
+  gt() |>
+  tab_header(
+    title = md("**Likelihood Ratio Test**"),
+    subtitle = "Comparing models with and without Age Variable"
+  ) |>
+  fmt_number(
+    columns = c(`Log Likelihood`, `Chi-square`),
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = `P-value`,
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = Df,
+    decimals = 0
+  ) |>
+  tab_footnote(
+    footnote = "A non-significant p-value (p > 0.05) indicates that the simpler model is preferred.",
+    locations = cells_column_labels(columns = `P-value`)
+  ) |>
+  tab_options(
+    table.border.top.color = "transparent",
+    table_body.hlines.color = "transparent",
+    table_body.border.bottom.color = "black"
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  cols_align(
+    align = "left",
+    columns = Model
+  )
+```
+After removing age from the model, the Likelihood Ratio Test produces a p-value that is marginally above 0.05. This result suggests that age is close to being statistically significant and may warrant retention based on subject-matter knowledge, despite narrowly missing the conventional threshold.
+
+
+## Final Model
+```{r}
+final_model <- glm(diabetes ~ glucose + mass + pedigree + age, 
+                   data = data, 
+                   family = binomial)
+
+tbl_regression(final_model,
+               exponentiate = T,
+               label = list(
+      pregnant = "Number of pregnancies",
+      glucose  = "Plasma glucose",
+      pressure = "Diastolic BP",
+      triceps  = "Triceps skinfold",
+      insulin  = "Serum insulin",
+      mass     = "Body Mass Index",
+      pedigree = "Diabetes pedigree",
+      age      = "Age (years)"
+    )
+) |> 
+    bold_labels() |> 
+    modify_header(estimate ~ "**AOR**") |> 
+    bold_p() |> 
+    as_gt() |>  # Use as_gt() instead of gt()
+    tab_header(
+        title = md("**Mulativariable Logistic Regression Model**"),
+        subtitle = md("Predictors of Diabetes, India")
+    ) |> 
+    tab_source_note(
+        source_note = md("Original owners: National Institute of Diabetes and Digestive and Kidney Diseases") 
+    ) |> 
+    opt_align_table_header(
+        align = "left") |> 
+     tab_options(
+        table_body.hlines.color = "transparent",
+        table_body.vlines.color = "transparent",
+        table.width = px(450)
+    )
+
+
+```
+Based on the sequence of Likelihood Ratio Tests, a final model including plasma glucose, body mass index, diabetes pedigree function, and age is selected. This model balances goodness-of-fit with parsimony, retaining predictors that contribute meaningfully to explaining diabetes risk.
+
+
+## Full Model Versus Null Model
+```{r}
+# Create null model (intercept only)
+null_model <- glm(diabetes ~ 1, data = data, family = binomial)
+
+# Create full model
+full_model <- glm(diabetes ~ pregnant + glucose + pressure + triceps + 
+                    insulin + mass + pedigree + age, 
+                  data = data, family = binomial)
+
+# Perform LRT comparing null vs full model
+lrt_full <- lrtest(null_model, full_model)
+
+
+# Convert to data frame and create formatted table
+lrt_df_full <- data.frame(
+  Model = c("Null Model (Intercept only)", "Full Model (All predictors)"),
+  Parameters = c(1, 9),
+  `Log Likelihood` = c(lrt_full$LogLik[1], lrt_full$LogLik[2]),
+  Df = c(NA, lrt_full$Df[2]),
+  `Chi-square` = c(NA, lrt_full$Chisq[2]),
+  `P-value` = c(NA, lrt_full$`Pr(>Chisq)`[2]),
+  check.names = FALSE
+)
+
+# Create formatted table
+lrt_df_full |>
+  gt() |>
+  tab_header(
+    title = md("**Likelihood Ratio Test**"),
+    subtitle = "Testing Overall Model Significance: Null vs Full Model"
+  ) |>
+  fmt_number(
+    columns = c(`Log Likelihood`, `Chi-square`),
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = `P-value`,
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = Df,
+    decimals = 0
+  ) |>
+  tab_footnote(
+    footnote = "A significant p-value (p < 0.05) indicates that the full model is significantly better than the null model.",
+    locations = cells_column_labels(columns = `P-value`)
+  ) |>
+  tab_options(
+    table.border.top.color = "transparent",
+    table_body.hlines.color = "transparent",
+    table_body.border.bottom.color = "black",
+    table.width = px(650)
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  cols_align(
+    align = "left",
+    columns = Model
+  )
+
+```
+Comparison of the full model with the null (intercept-only) model shows a highly significant improvement in model fit. This confirms that the set of predictors collectively provides substantial explanatory power for diabetes status.
+
+
+## Final Model Versus Full Model
+```{r}
+# Perform LRT comparing final vs full model
+lrt_final_vs_full <- lrtest(final_model, full_model)
+
+# Convert to data frame and create formatted table
+lrt_df_final_vs_full <- data.frame(
+  Model = c("Final Model (glucose, mass, pedigree, age)", 
+            "Full Model (All 8 predictors)"),
+  Parameters = c(5, 9),
+  `Log Likelihood` = c(-173.62, -172.01),
+  Df = c(NA, 4),
+  `Chi-square` = c(NA, 3.2138),
+  `P-value` = c(NA, 0.5227),
+  check.names = FALSE
+)
+
+# Create formatted table
+lrt_df_final_vs_full |>
+  gt() |>
+  tab_header(
+    title = md("**Likelihood Ratio Test**"),
+    subtitle = "Comparing Final Model vs Full Model"
+  ) |>
+  fmt_number(
+    columns = c(`Log Likelihood`, `Chi-square`),
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = `P-value`,
+    decimals = 4
+  ) |>
+  fmt_number(
+    columns = Df,
+    decimals = 0
+  ) |>
+  tab_footnote(
+    footnote = "A non-significant p-value (p > 0.05) indicates that the simpler final model is preferred - the additional predictors in the full model do not significantly improve fit.",
+    locations = cells_column_labels(columns = `P-value`)
+  ) |>
+  tab_options(
+    table.border.top.color = "transparent",
+    table_body.hlines.color = "transparent",
+    table_body.border.bottom.color = "black",
+    table.width = px(800)
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  ) |>
+  cols_align(
+    align = "left",
+    columns = Model
+  )
+```
+The Likelihood Ratio Test comparing the final model with the full model is non-significant. This indicates that the reduced model performs comparably to the full model, despite including fewer predictors. The additional variables in the full model do not significantly improve fit.
+
+
+## Conclusion
+In conclusion, the final model consisting of plasma glucose, body mass index, diabetes pedigree function, and age provides a parsimonious and interpretable representation of diabetes risk in this dataset. The model achieves similar explanatory performance to the full model while avoiding unnecessary complexity, making it a suitable choice for inference and reporting.
+
+
